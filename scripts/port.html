@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web-Based Port Scanner</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            padding: 30px;
+            margin: 0;
+        }
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: #1e1e1e;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        h2 { color: #00ff99; border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 0; }
+        .input-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #aaa; }
+        input {
+            width: 100%;
+            padding: 10px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        input:focus { border-color: #00ff99; outline: none; }
+        button {
+            width: 100%;
+            padding: 12px;
+            color: #121212;
+            border: none;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.2s;
+            margin-bottom: 10px;
+        }
+        .btn-scan { background: #00ff99; }
+        .btn-scan:hover { background: #00cc7a; }
+        .btn-download { background: #00bfff; display: none; }
+        .btn-download:hover { background: #0099cc; }
+        #status {
+            margin-top: 15px;
+            font-style: italic;
+            color: #ffcc00;
+        }
+        .results-box {
+            margin-top: 20px;
+            background: #0a0a0a;
+            border: 1px solid #333;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', Courier, monospace;
+            border-radius: 4px;
+        }
+        .open-port { color: #00ff99; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Dynamic Network Timing Scanner</h2>
+    
+    <div class="input-group">
+        <div>
+            <label>Target IP / Hostname:</label>
+            <input type="text" id="targetIp" value="127.0.0.1">
+        </div>
+        <div>
+            <label>Timeout Window (ms):</label>
+            <input type="number" id="timeoutMs" value="1500">
+        </div>
+        <div>
+            <label>Start Port:</label>
+            <input type="number" id="startPort" value="1">
+        </div>
+        <div>
+            <label>End Port:</label>
+            <input type="number" id="endPort" value="1000">
+        </div>
+    </div>
+
+    <button id="scanBtn" class="btn-scan" onclick="toggleScan()">Launch Port Scan</button>
+    <button id="downloadBtn" class="btn-download" onclick="triggerLogDownload()">Download Results File</button>
+    
+    <div id="status">Ready to scan. Adjust your configurations above.</div>
+    <div class="results-box" id="output"></div>
+</div>
+
+<script>
+let isScanning = false;
+let openPortsFound = []; // Variable storing findings for txt compilation
+
+function logMessage(text, className = "") {
+    const output = document.getElementById("output");
+    const line = document.createElement("div");
+    if (className) line.className = className;
+    line.textContent = text;
+    output.appendChild(line);
+    output.scrollTop = output.scrollHeight; 
+}
+
+function testPortTiming(host, port, timeout) {
+    return new Promise((resolve) => {
+        const start = performance.now();
+        const img = new Image();
+        let called = false;
+        
+        const done = (status) => {
+            if (called) return;
+            called = true;
+            img.src = ""; 
+            const duration = performance.now() - start;
+            resolve({ port, status, duration });
+        };
+
+        img.onerror = () => done("open");
+        img.onload = () => done("open");
+        setTimeout(() => done("timeout"), timeout);
+        img.src = `http://${host}:${port}/mock_file_${Date.now()}.png`;
+    });
+}
+
+async function toggleScan() {
+    if (isScanning) {
+        isScanning = false;
+        document.getElementById("scanBtn").textContent = "Launch Port Scan";
+        document.getElementById("status").textContent = "Scan stopped by user.";
+        return;
+    }
+
+    isScanning = true;
+    openPortsFound = []; 
+    document.getElementById("scanBtn").textContent = "STOP SCAN";
+    document.getElementById("downloadBtn").style.display = "none"; 
+    document.getElementById("output").innerHTML = ""; 
+
+    const host = document.getElementById("targetIp").value;
+    const startPort = parseInt(document.getElementById("startPort").value) || 1;
+    const endPort = parseInt(document.getElementById("endPort").value) || 1000;
+    const timeout = parseInt(document.getElementById("timeoutMs").value) || 1500;
+
+    document.getElementById("status").textContent = `Scanning ${host}... Please wait.`;
+    logMessage(`--- Starting Scan Sequence on ${host} [Ports ${startPort} - ${endPort}] ---`);
+
+    for (let port = startPort; port <= endPort; port++) {
+        if (!isScanning) break; 
+
+        document.getElementById("status").textContent = `Checking target port: ${port}...`;
+        const res = await testPortTiming(host, port, timeout);
+
+        if (res.status === "open" && res.duration < (timeout - 100)) {
+            logMessage(`[+] Port ${res.port}: RESPONSIVE (~${Math.round(res.duration)}ms)`, "open-port");
+            openPortsFound.push(res.port); 
+        }
+    }
+
+    isScanning = false;
+    document.getElementById("scanBtn").textContent = "Launch Port Scan";
+    document.getElementById("status").textContent = "Scan completed.";
+    logMessage(`--- Scan Cycle Complete ---`);
+
+    // Make download option visible if targets were discovered
+    if (openPortsFound.length > 0) {
+        document.getElementById("downloadBtn").style.display = "block";
+    } else {
+        document.getElementById("status").textContent = "Scan complete. No open ports detected to generate file logs.";
+    }
+}
+
+function triggerLogDownload() {
+    const host = document.getElementById("targetIp").value;
+    
+    // Generate human-readable date structures matching your time requirement
+    const now = new Date();
+    const timestamp = now.getFullYear() + "-" + 
+                      String(now.getMonth() + 1).padStart(2, '0') + "-" + 
+                      String(now.getDate()).padStart(2, '0') + "_" + 
+                      String(now.getHours()).padStart(2, '0') + "-" + 
+                      String(now.getMinutes()).padStart(2, '0');
+
+    // Create file logs text layout
+    let txtContent = `========================================\r\n`;
+    txtContent += `PORT SCAN REPORT\r\n`;
+    txtContent += `Target Host: ${host}\r\n`;
+    txtContent += `Scan Finished: ${now.toString()}\r\n`;
+    txtContent += `========================================\r\n\r\n`;
+    txtContent += `Discovered Open Ports:\r\n`;
+    
+    openPortsFound.forEach(p => {
+        txtContent += `[+] Port ${p} is OPEN\r\n`;
+    });
+
+    // Create a Blob file link component in HTML memory
+    const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8" });
+    const link = document.createElement("a");
+    
+    // Set the file path naming blueprint dynamically
+    link.download = `portscan_${host}_${timestamp}.txt`;
+    link.href = URL.createObjectURL(blob);
+    
+    // Click it automatically to trigger your standard browser download prompt
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+</script>
+
+</body>
+</html>
