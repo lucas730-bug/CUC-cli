@@ -1,8 +1,0 @@
-#first####################################
-you first need to install g++ c++ compiler or it will likely break
-#second###################################
-you need to install python most latest eddition 
-#thred#####################################
-you must run the command  "pip install dnspython" in powershell ran as administrator
-#############################################
-then it should hopefully work
